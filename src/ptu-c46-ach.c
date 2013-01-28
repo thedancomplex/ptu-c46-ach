@@ -46,8 +46,11 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <stdlib.h>
 #include <sys/mman.h>
 
+// For PTU
+#include "ptu-c46-ach.h"
+
 // for hubo
-#include <hubo.h>
+// #include <hubo.h>
 
 // for ach
 #include <errno.h>
@@ -119,33 +122,31 @@ int ftime(struct timeb *tp);
 //typedef struct hubo h[1];
 
 // ach channels
-ach_channel_t chan_hubo_ref;      // hubo-ach
-ach_channel_t chan_hubo_init_cmd; // hubo-ach-console
-ach_channel_t chan_hubo_state;    // hubo-ach-state
-ach_channel_t chan_hubo_param;    // hubo-ach-param
+ach_channel_t chan_ref;      // hubo-ach
+ach_channel_t chan_state;    // hubo-ach-state
 
 int debug = 0;
 int hubo_debug = 0;
 
 //void huboLoop(struct hubo_param *H_param) {
-void huboLoop() {
+void mainLoop() {
 	// get initial values for hubo
-	struct hubo_ref H_ref;
-	struct hubo_state H_state;
+	struct ptu_ref H_ref;
+	struct ptu_state H_state;
 	memset( &H_ref,   0, sizeof(H_ref));
 	memset( &H_state, 0, sizeof(H_state));
 
 	size_t fs;
 	//int r = ach_get( &chan_hubo_ref, &H, sizeof(H), &fs, NULL, ACH_O_LAST );
 	//assert( sizeof(H) == fs );
-	int r = ach_get( &chan_hubo_ref, &H_ref, sizeof(H_ref), &fs, NULL, ACH_O_COPY );
+	int r = ach_get( &chan_ref, &H_ref, sizeof(H_ref), &fs, NULL, ACH_O_COPY );
 	if(ACH_OK != r) {
 		if(hubo_debug) {
 			printf("Ref ini r = %s\n",ach_result_to_string(r));}
 		}
 	else{   assert( sizeof(H_ref) == fs ); }
 
-	r = ach_get( &chan_hubo_state, &H_state, sizeof(H_state), &fs, NULL, ACH_O_COPY );
+	r = ach_get( &chan_state, &H_state, sizeof(H_state), &fs, NULL, ACH_O_COPY );
 	if(ACH_OK != r) {
 		if(hubo_debug) {
 			printf("State ini r = %s\n",ach_result_to_string(r));}
@@ -155,33 +156,17 @@ void huboLoop() {
 	 }
 
 
-	// time info
-	struct timespec t;
-	//int interval = 500000000; // 2hz (0.5 sec)
-	int interval = 10000000; // 100 hz (0.01 sec)
-	//int interval = 5000000; // 200 hz (0.005 sec)
-	//int interval = 2000000; // 500 hz (0.002 sec)
-
-
-	/* Sampling Period */
-	double T = (double)interval/(double)NSEC_PER_SEC; // (sec)
-
-	// get current time
-	//clock_gettime( CLOCK_MONOTONIC,&t);
-	clock_gettime( 0,&t);
 
 	while(1) {
-		// wait until next shot
-		clock_nanosleep(0,TIMER_ABSTIME,&t, NULL);
 
 		/* Get latest ACH message */
-		r = ach_get( &chan_hubo_ref, &H_ref, sizeof(H_ref), &fs, NULL, ACH_O_COPY );
+		r = ach_get( &chan_ref, &H_ref, sizeof(H_ref), &fs, NULL, ACH_O_COPY );
 		if(ACH_OK != r) {
 			if(hubo_debug) {
 				printf("Ref r = %s\n",ach_result_to_string(r));}
 			}
 		else{   assert( sizeof(H_ref) == fs ); }
-		r = ach_get( &chan_hubo_state, &H_state, sizeof(H_state), &fs, NULL, ACH_O_COPY );
+		r = ach_get( &chan_state, &H_state, sizeof(H_state), &fs, NULL, ACH_O_COPY );
 		if(ACH_OK != r) {
 			if(hubo_debug) {
 				printf("State r = %s\n",ach_result_to_string(r));}
@@ -193,89 +178,39 @@ void huboLoop() {
 // ------------------------------------------------------------------------------
 
 
-			H_ref.ref[LEB] = -1.0;
-			double encLEB = H_state.joint[LEB].pos;
 
 // ------------------------------------------------------------------------------
 // ---------------[ DO NOT EDIT BELOW THIS LINE]---------------------------------
 // ------------------------------------------------------------------------------
-		ach_put( &chan_hubo_ref, &H_ref, sizeof(H_ref));
-		t.tv_nsec+=interval;
-		tsnorm(&t);
+//		ach_put( &chan_hubo_ref, &H_ref, sizeof(H_ref));
 	}
 
 
 }
 
 
-
-
-
-
-void stack_prefault(void) {
-	unsigned char dummy[MAX_SAFE_STACK];
-	memset( dummy, 0, MAX_SAFE_STACK );
-}
-
-
-
-static inline void tsnorm(struct timespec *ts){
-
-//	clock_nanosleep( NSEC_PER_SEC, TIMER_ABSTIME, ts, NULL);
-	// calculates the next shot
-	while (ts->tv_nsec >= NSEC_PER_SEC) {
-		//usleep(100);	// sleep for 100us (1us = 1/1,000,000 sec)
-		ts->tv_nsec -= NSEC_PER_SEC;
-		ts->tv_sec++;
-	}
-}
 
 int main(int argc, char **argv) {
 
-	int vflag = 0;
-	int c;
-
-
-	char* ach_chan = HUBO_CHAN_REF_NAME;
 	int i = 1;
 	while(argc > i) {
 		if(strcmp(argv[i], "-d") == 0) {
 			debug = 1;
 		}
-		if(strcmp(argv[i], "-f") == 0) {
-			ach_chan = HUBO_CHAN_REF_FILTER_NAME;
-		}
 		i++;
 	}
 
-	/* RT */
-	struct sched_param param;
-	/* Declare ourself as a real time task */
-	param.sched_priority = MY_PRIORITY;
-	if(sched_setscheduler(0, SCHED_FIFO, &param) == -1) {
-		perror("sched_setscheduler failed");
-		exit(-1);
-	}
-
-	/* Lock memory */
-	if(mlockall(MCL_CURRENT|MCL_FUTURE) == -1) {
-		perror("mlockall failed");
-		exit(-2);
-	}
-
-	/* Pre-fault our stack */
-	stack_prefault();
 
 
 	/* open ach channel */
 	//int r = ach_open(&chan_hubo_ref, HUBO_CHAN_REF_NAME , NULL);
-	int r = ach_open(&chan_hubo_ref, ach_chan , NULL);
+	int r = ach_open(&chan_ref, PTU_C46_CHAN_REF , NULL);
 	assert( ACH_OK == r );
 
-	r = ach_open(&chan_hubo_state, HUBO_CHAN_STATE_NAME , NULL);
+	r = ach_open(&chan_state, PTU_C46_CHAN_STATE , NULL);
 	assert( ACH_OK == r );
 
-        huboLoop();
+        mainLoop();
 
 	pause();
 	return 0;
