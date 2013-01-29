@@ -1,0 +1,60 @@
+MakeAch()
+{
+
+	ach -1 -C ptu-c46-ref -m 10 -n 3000 
+	ach -1 -C ptu-c46-state -m 10 -n 3000 
+}
+
+KillAch()
+{
+
+	sudo rm /dev/shm/achshm-ptu-c46*  
+}
+
+Start()
+{
+	sudo chmod 777 "$1"
+	KillAch
+	MakeAch
+	./ptu-c46-ach "$1" &
+}
+
+Last()
+{
+	sudo chmod 777 $2
+	./ptu-c46-ach $2 &
+}
+
+Stop()
+{
+
+	kill -9 $(pidof ptu-c46-ach)
+}
+
+
+Kill()
+{
+	Stop
+	KillAch
+}
+
+
+case "$1" in
+	'start' )
+		Start $2
+	;;
+
+	'stop' )
+		Stop
+	;;
+	
+	'kill' )
+		Kill
+	;;
+
+	'last' )
+		Last $2
+	;;
+esac
+exit 0
+		
