@@ -6,10 +6,10 @@ CC := gcc
 BINARIES := ptu-c46-ach
 all : $(BINARIES)
 
-LIBS := -lach -lrt 
+LIBS := -lach -lrt  -lncurses 
 
 ptu-c46-ach: src/ptu-c46-ach.o
-	gcc -o $@ $< -lach -lrt -lm -lc
+	gcc -o $@ $< $(LIBS) -lm -lc
 
 %.o: %.c
 	$(CC) $(CFLAGS) -o $@ -c $<

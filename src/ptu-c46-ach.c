@@ -48,6 +48,8 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 // For PTU
 #include "ptu-c46-ach.h"
+#include <curses.h>
+//#include <conio.h>
 
 // for hubo
 // #include <hubo.h>
@@ -123,6 +125,42 @@ int debug = 0;
 int hubo_debug = 0;
 
 
+
+
+
+
+
+
+
+
+char getch2() {
+        char buf = 0;
+        struct termios old = {0};
+        if (tcgetattr(0, &old) < 0)
+                perror("tcsetattr()");
+        old.c_lflag &= ~ICANON;
+        old.c_lflag &= ~ECHO;
+        old.c_cc[VMIN] = 1;
+        old.c_cc[VTIME] = 0;
+        if (tcsetattr(0, TCSANOW, &old) < 0)
+                perror("tcsetattr ICANON");
+        if (read(0, &buf, 1) < 0)
+                perror ("read()");
+        old.c_lflag |= ICANON;
+        old.c_lflag |= ECHO;
+        if (tcsetattr(0, TCSADRAIN, &old) < 0)
+                perror ("tcsetattr ~ICANON");
+        return (buf);
+}
+
+
+
+
+
+
+
+
+
 int getTicks(double p) {
 	double r = 185.1428;
 	double n = r / (60.0 * 60.0);
@@ -182,7 +220,14 @@ void mainLoop( int fd ) {
 */
 	tcsetattr(fd, TCSANOW, &termios_p);
 
-	write(fd, "LD\r\n",4);
+	//write(fd, "LD\r\n",4); // turn off lim
+	write(fd, "LU\r\n",4);
+	write(fd, "PX2000\r\n",8);
+	write(fd, "PN-2000\r\n",9);
+	write(fd, "TX200\r\n",7);
+	write(fd, "TN-1500\r\n",9);
+	write(fd, "LU\r\n",4);
+	write(fd, "LD\r\n",4); // turn off lim
 	sleep(1);
 
 
@@ -334,6 +379,60 @@ int main(int argc, char **argv) {
 			H_ref.pan = strtod(argv[i+1], NULL);
 			ach_put( &chan_ref, &H_ref, sizeof(H_ref));		
 			return 0;
+		}
+
+		
+		if(strcmp(argv[i], "-k") == 0) {
+  		char opt;
+		printf("Keyboard input mode Use W-S-D-F keys:\n");
+		printf("Pan delta  = %f (rad) \n",DELTA_PAN);
+		printf("Tilt delta = %f (rad) \n",DELTA_TILT);
+		while(1) {
+//			printf("Please enter either 'a' or 'b'");
+
+			/* wait for keyboard */
+			opt = getch2();
+
+			r = ach_get( &chan_ref, &H_ref, sizeof(H_ref), &fs, NULL, ACH_O_LAST );
+			if(ACH_OK != r) {
+				if(hubo_debug) {
+					printf("Ref ini r = %s\n",ach_result_to_string(r));}
+				}
+			else{   assert( sizeof(H_ref) == fs ); }
+
+
+			if( tup == opt ) { 
+				H_ref.tilt = H_ref.tilt+DELTA_TILT; 
+				ach_put( &chan_ref, &H_ref, sizeof(H_ref));	
+			}	
+
+			if( tdown == opt ) { 
+				H_ref.tilt = H_ref.tilt - DELTA_TILT; 
+				ach_put( &chan_ref, &H_ref, sizeof(H_ref));	
+			}	
+
+
+			if( pleft == opt ) { 
+				H_ref.pan = H_ref.pan+DELTA_PAN; 
+				ach_put( &chan_ref, &H_ref, sizeof(H_ref));	
+			}	
+			
+			if( pright == opt ) { 
+				H_ref.pan = H_ref.pan-DELTA_PAN; 
+				ach_put( &chan_ref, &H_ref, sizeof(H_ref));	
+			}	
+
+
+
+//			if( 119==opt )
+//I				printf("here %d\n",opt);
+
+//while((opt=getchar())!='\n' && opt !=EOF);
+
+		}
+
+		
+
 		}
 		i++;
 	}
