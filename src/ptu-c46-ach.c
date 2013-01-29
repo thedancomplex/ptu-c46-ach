@@ -52,18 +52,12 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 // for hubo
 // #include <hubo.h>
 
-// for ach
-#include <errno.h>
+// for serial
+#include <string.h>
 #include <fcntl.h>
-#include <assert.h>
+#include <errno.h>
+#include <termios.h>
 #include <unistd.h>
-#include <pthread.h>
-#include <ctype.h>
-#include <stdbool.h>
-#include <math.h>
-#include <inttypes.h>
-#include "ach.h"
-
 
 /* At time of writing, these constants are not defined in the headers */
 #ifndef PF_CAN
@@ -128,9 +122,75 @@ ach_channel_t chan_state;    // hubo-ach-state
 int debug = 0;
 int hubo_debug = 0;
 
+
+int getTicks(double p) {
+	double r = 185.1428;
+	double n = r / (60.0 * 60.0);
+	return (int)floor(p / M_PI * 180.0 / n );
+}
+
 //void huboLoop(struct hubo_param *H_param) {
-void mainLoop() {
+void mainLoop( int fd ) {
+	/* Open Serial */
+	int n;
+    	char c;
+    	int bytes;
+
+    	char buffer[10];
+    	char *bufptr;
+    	int nbytes;
+    	int tries;
+    	int x;
+    	struct termios termios_p;
+
+
+    	if(fd == -1)
+    	{
+        	perror("open_port: Unable to open:");
+    	}
+    	else
+    	{
+        //	fcntl(fd, F_SETFL, 0);
+//        	printf("Port Open\n");
+    	}
+
+    	tcgetattr(fd, &termios_p);
+
+	cfsetispeed(&termios_p, B9600);
+	cfsetospeed(&termios_p, B9600);
+
+
+
+           termios_p.c_iflag &= ~(IGNBRK | BRKINT | PARMRK | ISTRIP
+                           | INLCR | IGNCR | ICRNL | IXON);
+           termios_p.c_oflag &= ~OPOST;
+           termios_p.c_lflag &= ~(ECHO | ECHONL | ICANON | ISIG | IEXTEN);
+           termios_p.c_cflag &= ~(CSIZE | PARENB);
+           termios_p.c_cflag |= CS8;
+
+
+/*
+	options.c_cflag |= (CLOCAL | CREAD);
+	options.c_cflag &= ~PARENB;
+	options.c_cflag &= ~CSTOPB;
+	options.c_cflag &= ~CSIZE;
+	options.c_cflag |= CS8;
+	//options.c_cflag &= CS8;
+	options.c_cflag &= ~( ICANON | ECHO | ECHOE |ISIG );
+	options.c_iflag &= ~(IXON | IXOFF | IXANY );
+	options.c_oflag &= ~OPOST;
+*/
+	tcsetattr(fd, TCSANOW, &termios_p);
+
+	write(fd, "LD\r\n",4);
+	sleep(1);
+
+
+
 	// get initial values for hubo
+
+
+
 	struct ptu_ref H_ref;
 	struct ptu_state H_state;
 	memset( &H_ref,   0, sizeof(H_ref));
@@ -145,7 +205,7 @@ void mainLoop() {
 			printf("Ref ini r = %s\n",ach_result_to_string(r));}
 		}
 	else{   assert( sizeof(H_ref) == fs ); }
-
+/*
 	r = ach_get( &chan_state, &H_state, sizeof(H_state), &fs, NULL, ACH_O_COPY );
 	if(ACH_OK != r) {
 		if(hubo_debug) {
@@ -155,29 +215,50 @@ void mainLoop() {
 		assert( sizeof(H_state) == fs );
 	 }
 
-
-
+*/
+	int L = 15;
 	while(1) {
 
 		/* Get latest ACH message */
-		r = ach_get( &chan_ref, &H_ref, sizeof(H_ref), &fs, NULL, ACH_O_COPY );
+		r = ach_get( &chan_ref, &H_ref, sizeof(H_ref), &fs, NULL, ACH_O_WAIT );
 		if(ACH_OK != r) {
 			if(hubo_debug) {
 				printf("Ref r = %s\n",ach_result_to_string(r));}
 			}
 		else{   assert( sizeof(H_ref) == fs ); }
+/*
 		r = ach_get( &chan_state, &H_state, sizeof(H_state), &fs, NULL, ACH_O_COPY );
 		if(ACH_OK != r) {
 			if(hubo_debug) {
 				printf("State r = %s\n",ach_result_to_string(r));}
 			}
 		else{   assert( sizeof(H_state) == fs ); }
-
+*/
 // ------------------------------------------------------------------------------
 // ---------------[ DO NOT EDIT AVBOE THIS LINE]---------------------------------
 // ------------------------------------------------------------------------------
 
+		int pan = getTicks(H_ref.pan);
+		int tilt = getTicks(H_ref.tilt);
+		
+		char strPan[L];
+		char strTilt[L];
 
+		memset( &strPan,   0, sizeof(strPan));
+		memset( &strTilt,   0, sizeof(strTilt));
+
+		sprintf(strPan, "PP%d\r\n",pan);
+		sprintf(strTilt, "TP%d\r\n",tilt);
+		strPan[L-1] = 13;
+		strPan[L-2] = 10;
+
+		strTilt[L-1] = 13;
+		strTilt[L-2] = 10;
+
+		write(fd, strPan,L);
+		write(fd, strTilt,L);
+//		printf(strTilt);
+//		printf(strPan);
 
 // ------------------------------------------------------------------------------
 // ---------------[ DO NOT EDIT BELOW THIS LINE]---------------------------------
@@ -189,18 +270,32 @@ void mainLoop() {
 }
 
 
+int doRead(int fd) {
+	int x;
+	int c;
+	char buffer[10];
+        char *bufptr;
+        int nbytes;
+	int bytes;
 
+    fcntl(fd, F_SETFL, FNDELAY);
+     bytes = read(fd, bufptr, sizeof(buffer));
+    printf("number of bytes read is %d\n", bytes);
+    perror ("read error:");
+
+    for (x = 0; x < 10 ; x++)
+    {
+        c = buffer[x];
+        printf("%d  ",c);
+    }
+    close(fd);
+
+    //puts(buffer[0]);
+    printf("\nshould of put something out \n");
+
+    return (0);
+}
 int main(int argc, char **argv) {
-
-	int i = 1;
-	while(argc > i) {
-		if(strcmp(argv[i], "-d") == 0) {
-			debug = 1;
-		}
-		i++;
-	}
-
-
 
 	/* open ach channel */
 	//int r = ach_open(&chan_hubo_ref, HUBO_CHAN_REF_NAME , NULL);
@@ -210,7 +305,57 @@ int main(int argc, char **argv) {
 	r = ach_open(&chan_state, PTU_C46_CHAN_STATE , NULL);
 	assert( ACH_OK == r );
 
-        mainLoop();
+	struct ptu_ref H_ref;
+	struct ptu_state H_state;
+	memset( &H_ref,   0, sizeof(H_ref));
+	memset( &H_state, 0, sizeof(H_state));
+
+	size_t fs;
+	//int r = ach_get( &chan_hubo_ref, &H, sizeof(H), &fs, NULL, ACH_O_LAST );
+	//assert( sizeof(H) == fs );
+	r = ach_get( &chan_ref, &H_ref, sizeof(H_ref), &fs, NULL, ACH_O_LAST );
+	if(ACH_OK != r) {
+		if(hubo_debug) {
+			printf("Ref ini r = %s\n",ach_result_to_string(r));}
+		}
+	else{   assert( sizeof(H_ref) == fs ); }
+
+
+	/* check arguements */
+	int i = 1;
+	while(argc > i) {
+		if(strcmp(argv[i], "-t") == 0) {
+			H_ref.tilt = strtod(argv[i+1], NULL);
+		//	printf("set to %f\n", H_ref.tilt);
+			ach_put( &chan_ref, &H_ref, sizeof(H_ref));		
+			return 0;
+		}
+		if(strcmp(argv[i], "-p") == 0) {
+			H_ref.pan = strtod(argv[i+1], NULL);
+			ach_put( &chan_ref, &H_ref, sizeof(H_ref));		
+			return 0;
+		}
+		i++;
+	}
+
+
+
+
+
+	int fd = 0;
+
+	if(argc > 1) {
+		//printf("%s\n",argv[1]);
+		fd = open(argv[1], O_RDWR | O_NOCTTY | O_NDELAY);
+	}
+	else {
+		printf("exit\n");
+		return 0;
+	}
+
+
+        
+	mainLoop(fd);
 
 	pause();
 	return 0;

@@ -22,6 +22,10 @@ ACH
 (4) `sudo apt-get install ach-utils`
 
 
+Serial
+======
+sudo apt-get install setserial
+
 Read Line
 =========
 
