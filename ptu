@@ -21,14 +21,14 @@ Start()
 
 Last()
 {
-	sudo chmod 777 $2
-	./ptu-c46-ach $2 &
+	sudo chmod 777 $1
+	./ptu-c46-ach $1 &
 }
 
 Stop()
 {
 
-	kill -9 $(pidof ptu-c46-ach)
+	sudo kill -9 $(pidof ptu-c46-ach)
 }
 
 
